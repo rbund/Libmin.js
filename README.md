@@ -7,7 +7,7 @@ a simple namespace and module management solution for javascript.
 * Namespaces, similar to java namespaces
 * Plain javascript, no dependencies
 * Configurable
-* Small and simple, 2K minified (not gziped!)
+* Small and simple, 4K minified (not gziped!)
 
 ## How to use
 
