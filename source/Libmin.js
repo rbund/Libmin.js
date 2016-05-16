@@ -13,7 +13,6 @@ var Libmin = (function(lib){
 		this.__config = {};
 		
 		// read user config
-		//var userconfig = Array.prototype.slice.call(document.getElementsByTagName("script")).pop()
 		var userconfig = Array.prototype.slice.call(document.scripts).filter(function(s){return(this.filter(function(k){return(this.hasAttribute(k))},s).length > 0)}, CLibmin.prototype.configkeys).shift() || {};
 		CLibmin.prototype.configkeys.forEach(function(k){ var p = 'data-'+k; this.__config[k] = userconfig[p] ? userconfig[p] : CLibmin.prototype.defaultconfig[k]; }, this);
 
@@ -71,7 +70,7 @@ var Libmin = (function(lib){
 		{ 
 			CLibmin.prototype.instance.set(namespace, '__status', status); 
 			// debug
-			console.log('status change for '+namespace+' to '+status); 
+			//console.log('status change for '+namespace+' to '+status); 
 		};
 		
 		CLibmin.prototype.__getModuleStatus = function(namespace) 
@@ -142,7 +141,7 @@ var Libmin = (function(lib){
 				var mod = mods.pop();
 				if (mod === callernamespace) continue;
 				// debug:
-				console.log('needs, module status of '+mod+': '+self.__getModuleStatus(mod));
+				//console.log('needs, module status of '+mod+': '+self.__getModuleStatus(mod));
 				switch (self.__getModuleStatus(mod))
 				{
 					case 'loaded': break;
