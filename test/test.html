@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8" />
+<script src="../source/Libmin.js" charset="UTF-8"></script>
+</head>
+<body>
+<!--<textarea id="testoutput" cols="100" rows="40" style="font-family: monospace;font-size:11px;color:gray;margin-left:auto; margin-right:auto;display:block;"></textarea>-->
+<div id="divoutput" style="font-family: monospace;font-size:11px;width:1000px; height:600px; position:absolute; overflow:hidden; top:0px; left:0px; right:0px; margin-left:auto; margin-right:auto; ">
+
+<script  charset="UTF-8">
+"use strict";
+
+var RESULTSET = {}
+
+function clearResultSet() { RESULTSET = {}; };
+
+
+
+
+/**
+ * CTestcase
+ *
+ */
+function CTestcase(config)
+{
+	if (arguments.length !== 1 || typeof arguments[0] !== 'object') return(CTestcase.prototype.create.apply(undefined, arguments));
+	this.CONFIG = this.extend(this.extend({}, this.DEFAULT_CONFIG, 3), config, 3);
+	this.init();
+};
+CTestcase.current = function() { return(CTestcase.prototype.currenttestcase); };
+
+CTestcase.prototype.currenttestcase = null;
+CTestcase.prototype.testcasequeue = [];
+//CTestcase.prototype.idcounter = 1;
+CTestcase.prototype.STATUS = { NONE: 0, INITIALIZING: 1, INITIALIZED: 2, RUNNING: 3, STOPPED: 4, ABORTED: 5 };
+
+CTestcase.prototype.create = function()
+{
+	if (arguments.length === 1 && typeof arguments[0] === 'object') return(new CTestcase(argument[0]));
+	
+	var result, strings = [], functions = [], booleans = [];
+	for (var i = 0, len = arguments.length; i < len; i++)
+	{
+		switch (typeof arguments[i])
+		{
+			case 'string': strings.push(arguments[i]); break;
+			case 'function': functions.push(arguments[i]); break;
+			case 'boolean': booleans.push(arguments[i]); break;
+		}
+		if (strings.length > 0 && functions.length > 0)
+		{
+			var config = {};
+			if (strings.length > 1)
+			{
+				config.name = strings[0];
+				config.description = strings[1];
+			}
+			else config.name = strings[0];
+			config.onrun = functions[0];
+			if (functions.length > 1) config.onstop = functions[1];
+			if (functions.length > 2) config.oninit = functions[2];
+			if (booleans.length)
+				config.async = booleans[0];
+			result = new CTestcase(config);
+		}
+	}
+	return(result);
+};
+
+CTestcase.prototype.isAsync = function() { return(this.CONFIG.async === true); };
+CTestcase.prototype.setStatus = function(newstatus) { this.status = newstatus; if (this.CONFIG.suite) this.CONFIG.suite.update(); };
+
+CTestcase.prototype.init = function()
+{
+	this.setStatus(CTestcase.prototype.STATUS.INITIALIZING); 
+	this.userdata = {};
+	if (this.CONFIG.oninit) this.CONFIG.oninit(this);
+	this.setStatus(CTestcase.prototype.STATUS.INITIALIZED);
+};
+
+CTestcase.prototype.run = function()
+{
+	if (CTestcase.prototype.currenttestcase !== null) CTestcase.prototype.currenttestcase.checkTimeout();
+	
+	if (CTestcase.prototype.currenttestcase === null && this.status === CTestcase.prototype.STATUS.INITIALIZED)
+	{
+		CTestcase.prototype.currenttestcase = this;
+		this.setStatus(CTestcase.prototype.STATUS.RUNNING);
+		this.starttime = Date.now();
+		var res = [];
+		if (this.CONFIG.onrun) res = this.CONFIG.onrun(this);
+		else 
+		{
+			res = [false, 'no test method provided.'];
+			this.stop(res);
+		}
+		if (! this.isAsync() ) 
+		{
+			this.stop(res);
+		}
+	}
+	else CTestcase.prototype.testcasequeue.push(this);
+};
+
+CTestcase.prototype.stop = function()
+{
+	if (this.status === CTestcase.prototype.STATUS.RUNNING)
+	{
+		this.stoptime = Date.now();
+		this.runtime = this.stoptime - this.starttime;
+		if (arguments.length)
+		{
+			this.setResult.apply(this, arguments);
+		};
+		this.setStatus(CTestcase.prototype.STATUS.STOPPED);
+		if (this.CONFIG.onstop) this.CONFIG.onstop(this);
+		CTestcase.prototype.currenttestcase = null;
+		if (CTestcase.prototype.testcasequeue.length)
+		{
+			CTestcase.prototype.testcasequeue.shift().run();
+		};
+	}
+};
+
+CTestcase.prototype.setResult = function(/* boolean */ result, /* string */ resultdescription)
+{
+	if (Array.isArray(result))
+	{
+		this.userresult = result[0];
+		this.userresultdescription = result[1];
+	}
+	else
+	{
+		this.userresult = result;
+		this.userresultdescription = resultdescription;
+	}
+};
+
+CTestcase.prototype.checkTimeout = function(forcecheck)
+{
+	if (this.status === CTestcase.prototype.STATUS.RUNNING || forcecheck)
+	{
+		var runtime = (this.stoptime ? this.stoptime : Date.now()) - this.starttime;
+		if (runtime > this.CONFIG.maxruntime)
+		{
+			this.stop([false, 'test exceeds the allowed runtime (runtime: '+runtime+', max allowed: '+this.CONFIG.maxruntime+')']);
+			this.setStatus(CTestcase.prototype.STATUS.ABORTED);
+		}
+	}
+}
+
+CTestcase.prototype.getResult = function()
+{
+	var result = undefined;
+	//this.checkTimeout(true); 
+	if (this.status === CTestcase.prototype.STATUS.STOPPED || this.status === CTestcase.prototype.STATUS.ABORTED)
+	{
+		result = { 'result': this.userresult, 'description': this.userresultdescription };
+	}
+	return(result);
+};
+
+CTestcase.prototype.setUserData = function(key, value)
+{
+	this.userdata[key] = value;
+};
+
+CTestcase.prototype.getUserData = function(key)
+{
+	return(this.userdata[key]);
+};
+
+CTestcase.prototype.DEFAULT_CONFIG =
+	{
+		maxruntime: 5000,
+		async: false
+	};
+
+CTestcase.prototype.extend = function(target, source, options)
+{
+	var defoptions = options || 1,
+		xoverwrite = (defoptions & 1) > 0,
+		xfunctions = (defoptions & 2) > 0,
+		xnonenumerables = (defoptions & 4) > 0,
+		keys = xnonenumerables ? Object.getOwnPropertyNames(source) : Object.keys(source);
+	
+	for (var i = 0, len = keys.length; i < len; i++)
+	{
+		var key = keys[i];
+		if ((typeof source[key] !== 'function') || xfunctions)
+		{
+			if (xoverwrite || !target.hasOwnProperty(key))
+			{
+				target[key] = source[key];
+			}
+		}
+	}
+	return(target);
+};
+
+
+function CTestSuite(element)
+{
+	this.tests = [];
+	this.element = element;
+};
+
+CTestSuite.prototype.getTestcaseStatus = function(testcase)
+{
+	var res = {};
+	switch (testcase.status)
+	{
+		case CTestcase.prototype.STATUS.INITIALIZING:
+		case CTestcase.prototype.STATUS.INITIALIZED:
+			res.status  = 'initializing'; break;		
+		case CTestcase.prototype.STATUS.RUNNING:
+			res.status = 'running'; res.runtime  = Date.now() - testcase.starttime;
+			break;
+		case CTestcase.prototype.STATUS.STOPPED:
+		case CTestcase.prototype.STATUS.ABORTED:
+			var tres = testcase.getResult();
+			if (tres.result === true)
+			{
+				res.status = 'passed';
+			}
+			else
+			{
+				res.status = 'error';
+				res.error = tres.description;
+			}
+			res.runtime = testcase.runtime;
+			break;
+		default:
+			res.status = 'undefined';
+	}
+	res.name = testcase.CONFIG.name;
+	if (testcase.CONFIG.description) res.description = testcase.CONFIG.description;
+	return(res);
+}
+
+CTestSuite.prototype.getTestcaseStatusAsText = function(testcase)
+{
+	var res = this.getTestcaseStatus(testcase);
+	return( res.status + (res.error ? '['+res.error+']' : '') + ': ' + res.name + (res.description ? ' ('+res.description+')' : '') + (res.runtime ? ' - runtime: ' + res.runtime + ' ms' : ''));
+};
+
+CTestSuite.prototype.getTestcaseStatusAsHTML = function(testcase)
+{
+	var res = this.getTestcaseStatus(testcase);
+	var statuscolor = 'grey';
+	switch (res.status)
+	{
+		case 'error': statuscolor = 'red'; break;
+		case 'passed': statuscolor = 'green'; break;
+		case 'running': statuscolor = 'orange'; break;
+	}
+	return('<p>' +
+		'<span style="color: '+statuscolor+'">' + res.status + (res.status === 'error' ? '[' + res.error + ']' : '') + '</span>'+
+		': ' + res.name + (res.description ? ' ('+res.description+')' : '') +
+		(res.runtime ? ' - runtime: ' + res.runtime + ' ms' : '') +
+		'</p>');
+};
+
+CTestSuite.prototype.update = function()
+{
+	var contents = [], justtext = (this.element.tagName.toLowerCase() === "textarea");
+	for (var i = 0, len = this.tests.length; i < len; i++) contents.push(justtext ? this.getTestcaseStatusAsText(this.tests[i]) : this.getTestcaseStatusAsHTML(this.tests[i]));
+	this.element.innerHTML = justtext ? contents.join('\n') : contents.join('');
+};
+
+CTestSuite.prototype.add = function(testcase)
+{
+	this.tests.push(testcase);
+	testcase.CONFIG.suite = this;
+	this.update;
+};
+
+CTestSuite.prototype.run = function()
+{
+	for (var i = 0, len = this.tests.length; i < len; this.tests[i++].run());
+	setTimeout(this.onTimer, 1000, this);
+}
+
+CTestSuite.prototype.onTimer = function(self)
+{
+	var finished = true;
+	for (var i = 0, len = self.tests.length; i < len; i++)
+		if (self.tests[i].status !== CTestcase.prototype.STATUS.STOPPED && self.tests[i].status !== CTestcase.prototype.STATUS.ABORTED)
+		{
+			finished = false;
+			self.tests[i].checkTimeout();
+		}
+	if (! finished) 
+	{
+		self.update();
+		setTimeout(self.onTimer, 1000, self);
+	}
+}
+
+
+
+
+
+function test(num)
+{
+	clearResultSet();
+	if (num === 1)
+	{		
+		var test = new CTestcase(true, 'self referenced module inclusion', 'tests if it is recognized when a module "needs" itself',
+			function(tc)
+			{
+				Libmin.needs('com.promodeon.Libmin.test.test1',
+					function(success, faultymodule)
+					{
+						CTestcase.current().stop(success, success ? undefined : 'unable to load '+faultymodule);
+					}
+				)
+			}
+		);
+		return(test);
+	}
+	if (num === 2)
+	{
+		return(new CTestcase(true, 'cross referenced module inclusion', 'tests if cross referenced modules behave as expected',
+			function(tc) // onrun
+			{
+				Libmin.needs('com.promodeon.Libmin.test.test2a', function(success, faultymodule)
+				{
+					CTestcase.current().stop(success, success ? undefined : 'unable to load '+faultymodule);
+				}) 
+			},
+			function(tc) // onstop, evaluate test result
+			{
+				if (tc.getResult().result === false)
+				{
+					var test2astatus = Libmin.__getModuleStatus('com.promodeon.Libmin.test.test2a'),
+						test2bstatus = Libmin.__getModuleStatus('com.promodeon.Libmin.test.test2b'),
+						test2acalled = tc.getUserData('test2a') ? true : false,
+						test2bcalled = tc.getUserData('test2b') ? true : false;
+					
+					if (test2astatus !== 'waiting' && test2astatus !== 'initializing') tc.setResult(false, 'status of module "com.promodeon.Libmin.test.test2a" is in wrong state');
+					else
+					if (test2bstatus !== 'waiting' && test2bstatus !== 'initializing') tc.setResult(false, 'status of module "com.promodeon.Libmin.test.test2b" is in wrong state');
+					else
+					if (test2acalled) tc.setResult(false, 'call to test2a onload() happend but should not');
+					else
+					if (test2bcalled) tc.setResult(false, 'call to test2b onload() happend but should not');
+					else
+					tc.setResult(true);
+				}
+				else
+				{
+					tc.setResult(false,'test should run into a timeout, but didn\'t');
+				}
+			}
+			)
+		);
+	}
+	if (num === 3)
+	{
+		return(new CTestcase(true, 'cascading module inclusion','tests if cascading module inclusion is correct handled',
+			function(tc)
+			{
+				Libmin.needs(['com.promodeon.Libmin.test.test3a'], function(success, faultymodule)
+				{
+					CTestcase.current().stop(success, success ? undefined : 'unable to load '+faultymodule);
+				})
+			},
+			function(tc) // onstop, evaluate test result
+			{
+				if (tc.getResult.result === true)
+				{
+					var test3astatus = Libmin.__getModuleStatus('com.promodeon.Libmin.test.test3a'),
+						test3bstatus = Libmin.__getModuleStatus('com.promodeon.Libmin.test.test3b'),
+						test3cstatus = Libmin.__getModuleStatus('com.promodeon.Libmin.test.test3c'),
+						test3asuccess = tc.getUserData('test3a') ? tc.getUserData('test3a')[0] : false,
+						test3csuccess = tc.getUserData('test3c') ? tc.getUserData('test3c')[0] : false;
+					if (test3astatus !== 'loaded') tc.setResult(false, 'status of module "com.promodeon.Libmin.test.test3a" is in wrong state');
+					else
+					if (test3bstatus !== 'loaded') tc.setResult(false, 'status of module "com.promodeon.Libmin.test.test3b" is in wrong state');
+					else
+					if (test3cstatus !== 'loaded') tc.setResult(false, 'status of module "com.promodeon.Libmin.test.test3c" is in wrong state');
+					else
+					if (! test3asuccess) tc.setResult(false, 'call to test3a onload() wasn\'t successfull');
+					else
+					if (! test3csuccess) tc.setResult(false, 'call to test3c onload() wasn\'t successfull');
+				}
+			}
+			)
+		);
+	}
+
+};
+
+
+
+//var suite = new CTestSuite(document.getElementById('testoutput'));
+var suite = new CTestSuite(document.getElementById('divoutput'));
+
+suite.add(test(1));
+suite.add(test(2));
+suite.add(test(3));
+suite.run();
+//suite.update();
+//test(1, suite);
+//console.log(suite);
+//console.log(Libmin);
+
+/*
+var cases = [];
+cases.push(test(1));
+console.log(cases);
+*/
+</script>
+</body>
+</html>
