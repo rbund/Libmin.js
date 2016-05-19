@@ -7,14 +7,59 @@ var Libmin = (function(lib){
 		
 		if (CLibmin.prototype.instance) return(CLibmin.prototype.instance);
 		CLibmin.prototype.instance = this;
-		CLibmin.prototype.defaultconfig = { LIB_BASE:  '', LIB_EXTENSION: 'js' }
-		CLibmin.prototype.configkeys  = Object.keys(this.defaultconfig);
-		CLibmin.prototype.jobs = [];
+		
+		(function()
+		{
+			this.defaultconfig = { LIB_BASE:  '', LIB_EXTENSION: 'js' };
+			this.configkeys  = Object.keys(this.defaultconfig);
+			this.jobs = [];
+			this.__setModuleStatus = function(namespace, status) 
+			{ 
+				CLibmin.prototype.instance.set(namespace, '__status', status); 
+			};
+			this.__getModuleStatus = function(namespace) 
+			{ 
+				return(CLibmin.prototype.instance.get(namespace, '__status')); 
+			};
+			this.__processJobs = function(namespace, success)
+			{
+				var self = CLibmin.prototype.instance, jobs = CLibmin.prototype.jobs, i = 0, waiting = self.__getModuleStatus(namespace) === 'waiting';
+				self.__setModuleStatus(namespace, success ? (waiting ? 'initializing' : 'loaded') : 'error');
+
+				while (i < jobs.length)
+				{
+					var j = jobs[i].mods.indexOf(namespace);
+					if (j >= 0)
+					{
+						if (success) 
+						{
+							if (self.__getModuleStatus(namespace) === 'loaded') jobs[i].mods.splice(j,1);
+						}
+						else jobs[i].mods = [];
+						
+						if (jobs[i].mods.length == 0) 
+						{
+							jobs[i].onload(success, success ? undefined : namespace);
+							if (jobs[i].namespace && self.__getModuleStatus(jobs[i].namespace) === 'initializing')
+							{
+								self.__processJobs(jobs[i].namespace, success)
+							}
+							jobs.splice(i,1);
+						}
+						else i++;
+					}
+					else i++;
+				}
+			};
+		}).call(CLibmin.prototype);
+
+		
 		this.__config = {};
 		
 		// read user config
-		var userconfig = Array.prototype.slice.call(document.scripts).filter(function(s){return(this.filter(function(k){return(this.hasAttribute(k))},s).length > 0)}, CLibmin.prototype.configkeys).shift() || {};
-		CLibmin.prototype.configkeys.forEach(function(k){ var p = 'data-'+k; this.__config[k] = userconfig[p] ? userconfig[p] : CLibmin.prototype.defaultconfig[k]; }, this);
+		var userconfig = {};
+		Array.prototype.slice.call(Array.prototype.slice.call(document.getElementsByTagName("script")).pop().attributes).forEach(function(e) { userconfig[e.name] = e.value; });
+		CLibmin.prototype.configkeys.forEach(function(k){ var p = 'data-'+k.toLowerCase(); this.__config[k] = userconfig[p] ? userconfig[p] : CLibmin.prototype.defaultconfig[k]; }, this);
 
 		/**
 		 * retrieves namespace data.
@@ -65,50 +110,7 @@ var Libmin = (function(lib){
 			ns[key] = value;
 			return(ns);
 		};
-		
-		CLibmin.prototype.__setModuleStatus = function(namespace, status) 
-		{ 
-			CLibmin.prototype.instance.set(namespace, '__status', status); 
-			// debug
-			//console.log('status change for '+namespace+' to '+status); 
-		};
-		
-		CLibmin.prototype.__getModuleStatus = function(namespace) 
-		{ 
-			return(CLibmin.prototype.instance.get(namespace, '__status')); 
-		};
-		
-		CLibmin.prototype.__processJobs = function(namespace, success)
-		{
-			var self = CLibmin.prototype.instance, jobs = CLibmin.prototype.jobs, i = 0, waiting = self.__getModuleStatus(namespace) === 'waiting';
-			self.__setModuleStatus(namespace, success ? (waiting ? 'initializing' : 'loaded') : 'error');
-
-			while (i < jobs.length)
-			{
-				var j = jobs[i].mods.indexOf(namespace);
-				if (j >= 0)
-				{
-					if (success) 
-					{
-						if (self.__getModuleStatus(namespace) === 'loaded') jobs[i].mods.splice(j,1);
-					}
-					else jobs[i].mods = [];
-					
-					if (jobs[i].mods.length == 0) 
-					{
-						jobs[i].onload(success, success ? undefined : namespace);
-						if (jobs[i].namespace && self.__getModuleStatus(jobs[i].namespace) === 'initializing')
-						{
-							self.__processJobs(jobs[i].namespace, success)
-						}
-						jobs.splice(i,1);
-					}
-					else i++;
-				}
-				else i++;
-			}
-		};
-		
+				
 		// script onerror handler
 		this.__onScriptError = function(/* Event */ ev, /* boolean */success)
 		{
@@ -140,8 +142,6 @@ var Libmin = (function(lib){
 			{
 				var mod = mods.pop();
 				if (mod === callernamespace) continue;
-				// debug:
-				//console.log('needs, module status of '+mod+': '+self.__getModuleStatus(mod));
 				switch (self.__getModuleStatus(mod))
 				{
 					case 'loaded': break;
@@ -164,7 +164,7 @@ var Libmin = (function(lib){
 					self.set(mod, '__status', 'loading');
 					var sc = document.createElement('script');
 					sc.setAttribute('async',true);
-					sc.src = self.__config.LIB_BASE + (mod.split('.').join('/')) + '.' + self.__config.LIB_EXTENSION;
+					sc.src = self.__config.LIB_BASE ? self.__config.LIB_BASE + '/' : '' + (mod.split('.').join('/')) + '.' + self.__config.LIB_EXTENSION;
 					sc.onload = self.__onScriptLoaded;
 					sc.onerror = self.__onScriptError;
 					sc.setAttribute('data-namespace', mod);
