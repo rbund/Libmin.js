@@ -1,3 +1,5 @@
+![ABANDONED](https://img.shields.io/badge/status-abandoned-red.svg)
+
 # Libmin.js
 
 a simple module and namespace management solution for javascript.
